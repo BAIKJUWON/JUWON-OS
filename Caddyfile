@@ -1,0 +1,27 @@
+# 컨테이너 안에서만 쓰는 경로 분배기. HTTPS는 DSM 역방향 프록시가 맡습니다.
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	request_body {
+		max_size 4GB
+	}
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+}

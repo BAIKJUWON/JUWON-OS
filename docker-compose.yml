@@ -1,0 +1,98 @@
+# JUWON OS — 시놀로지 Container Manager / docker compose 용
+# 사용법: .env.example 을 .env 로 복사해 값을 채운 뒤  `sudo docker compose up -d --build`
+name: juwon-os
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: juwon-os-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-juwon}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 설정하세요}
+      POSTGRES_DB: ${DB_NAME:-juwon_os}
+    volumes:
+      - ${DATA_ROOT:-./data}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-juwon} -d ${DB_NAME:-juwon_os}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  api:
+    build: ./backend
+    container_name: juwon-os-api
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER:-juwon}:${DB_PASSWORD}@db:5432/${DB_NAME:-juwon_os}
+      FIELD_KEY: ${FIELD_KEY:?FIELD_KEY를 .env에 설정하세요}
+      FILES_DIR: /data/files
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      IDLE_MINUTES: ${IDLE_MINUTES:-120}
+      # 한국투자증권 Open API (비워 두면 '미설정'으로 표시)
+      KIS_ENV: ${KIS_ENV:-real}
+      KIS_APP_KEY: ${KIS_APP_KEY:-}
+      KIS_APP_SECRET: ${KIS_APP_SECRET:-}
+      KIS_ACCOUNT: ${KIS_ACCOUNT:-}
+      KIS_ACCOUNT_PROD: ${KIS_ACCOUNT_PROD:-01}
+      # 한국투자증권 2번 계좌 (미니스탁 계좌가 따로일 때)
+      KIS2_NAME: ${KIS2_NAME:-한국투자증권 2}
+      KIS2_ENV: ${KIS2_ENV:-real}
+      KIS2_APP_KEY: ${KIS2_APP_KEY:-}
+      KIS2_APP_SECRET: ${KIS2_APP_SECRET:-}
+      KIS2_ACCOUNT: ${KIS2_ACCOUNT:-}
+      KIS2_ACCOUNT_PROD: ${KIS2_ACCOUNT_PROD:-01}
+      # 키움증권 REST API
+      KIWOOM_ENV: ${KIWOOM_ENV:-real}
+      KIWOOM_APP_KEY: ${KIWOOM_APP_KEY:-}
+      KIWOOM_SECRET: ${KIWOOM_SECRET:-}
+      # 자동매매·자동 불러오기·GitHub
+      AUTOTRADE_LIVE: ${AUTOTRADE_LIVE:-false}
+      AUTO_SYNC_MINUTES: ${AUTO_SYNC_MINUTES:-180}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OAUTH_ID: ${GITHUB_OAUTH_ID:-}
+      GITHUB_OAUTH_SECRET: ${GITHUB_OAUTH_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TZ: Asia/Seoul
+      # 선택: 공개 RSS 기반 팬덤 소식 수집
+      H2H_YOUTUBE_CHANNEL_ID: ${H2H_YOUTUBE_CHANNEL_ID:-}
+      H2H_YOUTUBE_HANDLE: ${H2H_YOUTUBE_HANDLE:-}
+      H2H_REFRESH_MINUTES: ${H2H_REFRESH_MINUTES:-0}
+      # CODEF 인증서 조회 (비워 두면 '미설정')
+      CODEF_MODE: ${CODEF_MODE:-sandbox}
+      CODEF_CLIENT_ID: ${CODEF_CLIENT_ID:-}
+      CODEF_CLIENT_SECRET: ${CODEF_CLIENT_SECRET:-}
+      CODEF_PUBLIC_KEY: ${CODEF_PUBLIC_KEY:-}
+    volumes:
+      - ${DATA_ROOT:-./data}/files:/data/files
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  web:
+    build: ./frontend
+    container_name: juwon-os-web
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Seoul
+    depends_on: [api]
+    networks: [internal]
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: juwon-os-proxy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8090}:80"     # DSM 역방향 프록시(HTTPS)가 이 포트로 넘겨 줍니다
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on: [web, api]
+    networks: [internal]
+
+networks:
+  internal:
